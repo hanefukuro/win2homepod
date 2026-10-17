@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>1.1.2</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../vendor/WinPlay/WinPlay.Core/WinPlay.Core.csproj" />
+    <None Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../vendor/WinPlay/THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../vendor/WinPlay/UPSTREAM.md" Link="UPSTREAM.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
