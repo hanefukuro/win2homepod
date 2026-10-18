@@ -29,11 +29,19 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Test without audio hardware
         run: dotnet test tests/WinPlay.Core.Tests/WinPlay.Core.Tests.csproj -c Release --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+      - name: Exercise offline probe command
+        run: dotnet run --project src/Win2HomePod.Probe/Win2HomePod.Probe.csproj -c Release --no-build -- plan --codec 1 --audio-format 0x800 --spf 176 --timing ntp --output .state/probe-plan.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results-${{ matrix.os }}
           path: TestResults/*.trx
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-probe-${{ matrix.os }}
+          path: .state/probe-plan.json
+          include-hidden-files: true
           if-no-files-found: error
 
   windows-build:
@@ -49,6 +57,14 @@ jobs:
       - name: Publish Windows app
         shell: pwsh
         run: ./build.ps1
+      - name: Publish experimental probe CLI
+        shell: pwsh
+        run: ./build-probe.ps1
+      - name: Exercise published probe without a receiver
+        shell: pwsh
+        run: |
+          & ./probe-app/Win2HomePod.Probe.exe plan --output .state/published-probe-plan.json
+          if ($LASTEXITCODE -ne 0) { throw 'Published probe plan failed' }
       - name: Render UI without discovery or streaming
         shell: pwsh
         run: |
@@ -64,6 +80,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path dist | Out-Null
           Copy-Item app dist/app -Recurse
+          Copy-Item probe-app dist/probe-app -Recurse
+          Copy-Item docs dist/docs -Recurse
           Copy-Item Start.cmd, Stop.cmd, README.md, VERIFICATION.md, LICENSE dist
       - uses: actions/upload-artifact@v4
         with:

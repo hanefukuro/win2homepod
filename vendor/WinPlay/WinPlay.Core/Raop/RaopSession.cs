@@ -30,6 +30,8 @@ public sealed class RaopSession : IAsyncDisposable
 {
     // Modified by Win2HomePod: configurable receiver buffer, retaining a 2 s fallback.
     private readonly int _latencyFrames;
+    private StreamProbeOptions? _probeOptions;
+    private StreamProbeReport? _probeReport;
     private const int SampleRate = 44100;
 
     private readonly RtspConnection _rtsp = new();
@@ -120,16 +122,56 @@ public sealed class RaopSession : IAsyncDisposable
         }
     }
 
+    /// <summary>Negotiate an experimental declaration and immediately tear it down; never start an audio pump.</summary>
+    public static async Task<StreamProbeReport> ProbeAsync(IPAddress address, int port,
+        StreamProbeOptions options, CancellationToken ct = default)
+    {
+        options.Validate();
+        var report = new StreamProbeReport { Requested = options };
+        var session = new RaopSession(options.UsePtp, 150) { _probeOptions = options, _probeReport = report };
+        try
+        {
+            await session.HandshakeAsync(address, port, ct).ConfigureAwait(false);
+            report.Outcome = "setup-accepted";
+        }
+        catch (OperationCanceledException) { report.Outcome = "cancelled-or-timeout"; report.ErrorKind = "OperationCanceledException"; }
+        catch (RtspException ex)
+        {
+            report.Outcome = ex.StatusCode >= 300 ? "rejected" : "protocol-error";
+            report.ErrorKind = nameof(RtspException);
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or HapPairingException
+            or PairingRequiredException or InvalidOperationException or FormatException or System.Security.Cryptography.CryptographicException)
+        {
+            report.Outcome = report.Responses.Any(r => r.StatusCode >= 300) ? "rejected" : "error";
+            report.ErrorKind = ex.GetType().Name;
+        }
+        finally
+        {
+            report.AudioPacketsSent = session.FramesSent;
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+        return report;
+    }
+
+    private void ProbePhase(string phase)
+    {
+        if (_probeReport is not null) _probeReport.Phase = phase;
+    }
+
     private void Stage(string message) => StageChanged?.Invoke(message);
 
     private async Task HandshakeAsync(IPAddress address, int port, CancellationToken ct)
     {
+        ProbePhase("connect");
         Stage($"connecting to {address}:{port}");
         await _rtsp.ConnectAsync(address, port, ct).ConfigureAwait(false);
 
+        ProbePhase("info");
         Stage("GET /info");
         var info = await _rtsp.RequestAsync(new RtspRequest { Method = "GET", Uri = "/info" }, ct)
             .ConfigureAwait(false);
+        _probeReport?.Observe("info", "GET", info);
         info.EnsureSuccess("GET /info");
         var infoDict = BinaryPlist.ReadDictionary(info.Body);
         Stage($"receiver: {infoDict.GetValueOrDefault("name")} ({infoDict.GetValueOrDefault("model")})");
@@ -142,6 +184,7 @@ public sealed class RaopSession : IAsyncDisposable
         }
         else
         {
+            ProbePhase("pair-setup");
             Stage("transient pair-setup (SRP-6a, PIN 3939)");
             try
             {
@@ -155,6 +198,7 @@ public sealed class RaopSession : IAsyncDisposable
                         ContentType = "application/octet-stream",
                         Headers = { ["X-Apple-HKP"] = "4" },
                     }, token).ConfigureAwait(false);
+                    _probeReport?.Observe("pair-setup", "POST", resp);
                     resp.EnsureSuccess("POST /pair-setup");
                     return resp.Body;
                 }, ct).ConfigureAwait(false);
@@ -223,6 +267,7 @@ public sealed class RaopSession : IAsyncDisposable
                 ["timingProtocol"] = "NTP",
             };
         }
+        ProbePhase("session-setup");
         var sessionSetup = await PlistRequestAsync("SETUP", sessionPayload, ct).ConfigureAwait(false);
 
         long eventPort = sessionSetup.TryGetValue("eventPort", out object? ep) && ep is long e ? e : 0;
@@ -243,6 +288,7 @@ public sealed class RaopSession : IAsyncDisposable
             }
         }
 
+        ProbePhase("record");
         Stage("RECORD");
         var record = await _rtsp.RequestAsync(new RtspRequest
         {
@@ -254,6 +300,7 @@ public sealed class RaopSession : IAsyncDisposable
                 ["RTP-Info"] = $"seq={_sequence};rtptime={_startTimestamp}",
             },
         }, ct).ConfigureAwait(false);
+        _probeReport?.Observe("record", "RECORD", record);
         record.EnsureSuccess("RECORD");
 
         if (_usePtp)
@@ -261,6 +308,7 @@ public sealed class RaopSession : IAsyncDisposable
             // Declare the timing group: [receiver, other members…, sender]. Without the
             // members listed, a stereo-pair leader plays alone and never brings its
             // partner into the session (plan §3.2 point 4).
+            ProbePhase("setpeers");
             List<object?> peerList = [_rtsp.RemoteAddress.ToString()];
             peerList.AddRange(_groupPeers.Select(p => (object?)p.ToString()));
             peerList.Add(_rtsp.LocalAddress.ToString());
@@ -272,15 +320,18 @@ public sealed class RaopSession : IAsyncDisposable
                 Body = BinaryPlist.Write(peerList),
                 ContentType = "/peer-list-changed",
             }, ct).ConfigureAwait(false);
+            _probeReport?.Observe("setpeers", "SETPEERS", peers);
             peers.EnsureSuccess("SETPEERS");
         }
 
+        ProbePhase("stream-setup");
         Stage("SETUP (stream: realtime ALAC 44.1/16/2)");
         var streamSetup = await PlistRequestAsync("SETUP", new Dictionary<string, object?>
         {
             ["streams"] = new List<object?>
             {
-                new Dictionary<string, object?>
+                _probeOptions?.BuildStream(LocalPort(_controlSocket), _hap.AudioKey, _streamConnectionId)
+                ?? new Dictionary<string, object?>
                 {
                     ["type"] = 0x60L,
                     ["ct"] = 2L,                    // ALAC
@@ -339,6 +390,7 @@ public sealed class RaopSession : IAsyncDisposable
             Body = BinaryPlist.Write(body),
             ContentType = "application/x-apple-binary-plist",
         }, ct).ConfigureAwait(false);
+        _probeReport?.Observe(_probeReport.Phase, method, resp);
         resp.EnsureSuccess(method);
         return resp.Body.Length > 0 ? BinaryPlist.ReadDictionary(resp.Body) : [];
     }
@@ -785,15 +837,19 @@ public sealed class RaopSession : IAsyncDisposable
     {
         if (_stopped) return;
         _stopped = true;
+        if (_probeReport is not null && _probeReport.Phase == "connect") { _cts.Cancel(); return; }
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-            await _rtsp.RequestAsync(new RtspRequest { Method = "TEARDOWN", Uri = RtspUri }, cts.Token)
+            var teardown = await _rtsp.RequestAsync(new RtspRequest { Method = "TEARDOWN", Uri = RtspUri }, cts.Token)
                 .ConfigureAwait(false);
+            _probeReport?.Observe("teardown", "TEARDOWN", teardown);
+            if (_probeReport is not null) _probeReport.TeardownOutcome = teardown.StatusCode == 200 ? "accepted" : "rejected";
             Stage("TEARDOWN sent");
         }
         catch (Exception ex) when (ex is RtspException or IOException or SocketException or OperationCanceledException or ObjectDisposedException)
         {
+            if (_probeReport is not null) _probeReport.TeardownOutcome = "failed:" + ex.GetType().Name;
             Stage($"teardown: {ex.Message}");
         }
         _cts.Cancel();

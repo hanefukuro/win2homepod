@@ -105,6 +105,13 @@ CIはHomePodの出音、実測総遅延、WASAPIの取得周期、ネットワ�
 ログフォルダーはトレイのメニューから開けます。
 ソースを共有する場合は `.state/`、`.tmp/`、`app/`、`bin/`、`obj/`、アーカイブや秘密情報を含めないでください。
 
+## 別の低遅延経路を調べる（Issue #2）
+
+実験用CLIでcapabilityを保存し、stream type・codec値・audio format・spf・timing等を変えたSETUPを試せます。
+音声は送信せず、accept/rejectの記録後にTEARDOWNします。既存GUIの送信経路は変更しません。
+`./build-probe.ps1`で`probe-app/`へビルドします。クラウドCIもこのCLIをビルド・テストします。
+操作方法、比較元の実装、実機で確認する項目は[調査メモ](docs/LOW_LATENCY_PATHS.md)に記載しています。
+
 ## ライセンス
 
 本プロジェクトはGPL-3.0-or-laterです。
