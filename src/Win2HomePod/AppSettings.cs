@@ -2,7 +2,7 @@ using System.Text.Json;
 namespace Win2HomePod;
 internal sealed class AppSettings
 {
-    public static readonly int[] SupportedLatencies = [100, 150, 200, 250, 350, 500, 1000, 2000];
+    public static readonly int[] SupportedLatencies = [40, 50, 60, 70, 80, 100, 150, 200, 250, 350, 500, 1000, 2000];
     public int LatencyMs { get; set; } = 150;
     public bool VirtualOutput { get; set; } = true;
     public string[] TargetDeviceIds { get; set; } = [];

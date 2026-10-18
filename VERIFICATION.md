@@ -39,6 +39,41 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 待ち時間の設定値は総遅延の実測値ではありません。
 長時間連続再生、音響測定による総遅延と複数台の同期誤差は別途検証が必要です。
 
+## Issue #1: 低遅延の比較手順
+
+今回の先行実装はSETUP応答の構造化、画面表示、40〜80 msの実験値です。
+WASAPIの20 ms目標、キュー閾値、送信pacing、352-frame packetizationは従来のままです。
+CIの合格を低遅延設定の実機合格と扱わず、このIssueは実測が済むまで継続します。
+
+1. Windows・受信機のOS、接続方法、有線/無線、通常出力/VB-CABLE、受信機台数を記録します。
+2. まず150 msで連続音を再生し、`LATENCY` と `HEALTH` の基準を取ります。
+3. 同じ条件で100 / 80 / 70 / 60 / 50 / 40 msへ段階的に下げます。毎回停止して設定し直します。
+4. 各値で出音の有無・音切れ・再送要求・送信失敗・取得drop/underrun・queue high-water・最大callback gapを記録します。
+   HEALTHのカウンターは接続開始からの累積値です。同じ再生時間の差分で比較し、無再生時のunderrunを除外します。
+5. `LATENCY` はsessionとstreamのSETUP後に記録されます。後者を最終応答として保存します。
+   `ReceiverFields` が空なら応答値は不明です。未知の単位をmsへ変換せず、生値とパスを残します。
+6. 画面または電気的トリガーからマイク録音などでoutput latencyを測定します。
+   往復通信時間や要求待ち時間の代用は不可です。同じ条件で複数回測り、ばらつきも残します。
+7. 音切れや送信失敗がある場合は待ち時間を増やし、安定した最小値を確定します。
+
+| 要求ms | 出音/音切れ | 再送/送信失敗の差分 | drop/underrunの差分 | queue/gap ms | 受信機応答の生値 | 実測総遅延ms | 測定時間/条件 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 150（基準） | 未確認 | 未確認 | 未確認 | 未確認 | 未取得 | 未測定 | 未記録 |
+| 100 / 80 / 70 / 60 / 50 / 40（各値別に記録） | 未確認 | 未確認 | 未確認 | 未確認 | 未取得 | 未測定 | 未記録 |
+
+取得周期・MMCSS/タイマー等を変える際は、同じ比較を繰り返して効果を測ります。
+Process Loopbackによるゲーム単体取得、176/88-frame packetizationは互換性を含めた別実験です。
+
+### 機器不要の自動検証
+
+```powershell
+dotnet test tests/WinPlay.Core.Tests/WinPlay.Core.Tests.csproj -c Release
+```
+
+要求値の範囲・フレーム換算、低遅延設定の保存復元、SETUPのplist読込とlatency抽出、
+応答欠落/不正値、JSONログへの不要なペイロード混入防止を検証します。
+クラウドCI環境の整備は別Issue [#3](https://github.com/hanefukuro/win2homepod/issues/3) で扱います。
+
 ## 今回の変更で確認した範囲
 
 - Releaseビルド、初期設定、設定の保存・読み込み、停止中の再送信防止を確認。

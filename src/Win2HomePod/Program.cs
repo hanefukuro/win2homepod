@@ -126,6 +126,9 @@ internal sealed class AudioSession : IAsyncDisposable
     public long Retransmits => sessions.Sum(s => s.RetransmitRequests);
     public long SendFailures => sessions.Sum(s => s.AudioSendFailures);
     public string ReceiverHealth => string.Join(";", sessions.Select((s, i) => $"{receiverNames[i]}:packets={s.FramesSent},rtx={s.RetransmitRequests},send_errors={s.AudioSendFailures}"));
+    public string LatencySummary => string.Join(Environment.NewLine, sessions.Select((s, i) =>
+        $"{receiverNames[i]}: 要求 {s.LatencyDiagnostics.RequestedMilliseconds} ms / 受信機 {s.LatencyDiagnostics.ReceiverSummary}"))
+        + Environment.NewLine + "総遅延: 未計測（外部での音響測定が必要）";
 
     public async Task Start(IReadOnlyList<AirPlayDevice> devices, double db, bool tone, int latencyMs, MMDevice? captureDevice, CancellationToken ct)
     {
@@ -187,6 +190,11 @@ internal sealed class MainForm : Form
     private readonly Label state = new() { Text = "HomePod mini を探しています…", AutoSize = true, MaximumSize = new Size(630, 0) };
     private readonly Label sourceLabel = new() { AutoSize = true };
     private readonly Label stats = new() { AutoSize = true, Text = "停止中" };
+    private readonly TextBox latencyDiagnostics = new()
+    {
+        ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical,
+        Dock = DockStyle.Fill, Height = 72, Text = "受信機の待ち時間応答: 未接続 / 総遅延: 未計測",
+    };
     private readonly Label volumeLabel = new() { AutoSize = true, Text = "HomePod 音量: -18 dB" };
     private readonly TrackBar volume = new() { Minimum = -30, Maximum = 0, Value = -18, TickFrequency = 5, Dock = DockStyle.Fill };
     private readonly Label localPlayback = new() { Text = "PC側も再生します（消音には仮想音声出力が必要）", AutoSize = true };
@@ -220,10 +228,10 @@ internal sealed class MainForm : Form
         this.stopSignal = stopSignal;
         Text = "Win2HomePod — Windows → HomePod mini";
         Font = new Font("Yu Gothic UI", 10);
-        ClientSize = new Size(710, 630);
-        MinimumSize = new Size(700, 660);
+        ClientSize = new Size(710, 720);
+        MinimumSize = new Size(700, 750);
         StartPosition = FormStartPosition.CenterScreen;
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22), ColumnCount = 1, RowCount = 12 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(22), ColumnCount = 1, RowCount = 13 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.Controls.Add(new Label { Text = "Windowsの音を、HomePodへ。", Font = new Font(Font.FontFamily, 16, FontStyle.Bold), AutoSize = true });
         layout.Controls.Add(new Label { Text = "出力先（複数選択できます）", AutoSize = true, Margin = new Padding(0, 16, 0, 6) });
@@ -249,6 +257,7 @@ internal sealed class MainForm : Form
         var statusPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill };
         statusPanel.Controls.AddRange([state, stats]);
         layout.Controls.Add(statusPanel);
+        layout.Controls.Add(latencyDiagnostics);
         layout.Controls.Add(new Label { Text = "音が途切れる場合は1秒または2秒に戻して再送信してください。\n仮想出力の切替にはVB-CABLEを別途インストールしてください。\n閉じると送信を停止し、元の出力デバイスへ戻します。", AutoSize = true, ForeColor = Color.DimGray });
         Controls.Add(layout);
         tray = new TrayController(this, () => StartAudio(false), () => StopAudio());
@@ -377,6 +386,7 @@ internal sealed class MainForm : Form
                 AudioRouting.UseCable(cableDevice!.ID);
             }
             state.Text = $"送信中: {string.Join(" + ", devices.Select(d => d.Name))}{(tone ? "（左右テスト）" : "")}";
+            latencyDiagnostics.Text = audio.LatencySummary;
             tray.Status($"HomePod: {string.Join(" + ", devices.Select(d => d.Name))} / {settings.LatencyMs}ms");
             lastLog = 0;
             if (tone)
@@ -424,6 +434,7 @@ internal sealed class MainForm : Form
         state.Text = "停止しました。Windows出力を復元しました。";
         tray.Status("Win2HomePod — 停止中");
         stats.Text = "停止中";
+        latencyDiagnostics.Text = "受信機の待ち時間応答: 未接続 / 総遅延: 未計測";
         Program.Log("STOPPED");
         stopping = false;
     }

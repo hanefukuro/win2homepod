@@ -71,12 +71,13 @@ public sealed class RaopSession : IAsyncDisposable
     public long FramesSent => Interlocked.Read(ref _framesSent);
     public long RetransmitRequests => Interlocked.Read(ref _resendRequests);
     public long AudioSendFailures => Interlocked.Read(ref _audioSendFailures);
+    public ReceiverLatencyDiagnostics LatencyDiagnostics { get; private set; }
     public TimeSpan Elapsed => TimeSpan.FromSeconds(FramesSent * 352.0 / SampleRate);
 
     private RaopSession(bool usePtp, int latencyMs = 2000)
     {
-        if (latencyMs is < 100 or > 2000) throw new ArgumentOutOfRangeException(nameof(latencyMs));
-        _latencyFrames = SampleRate * latencyMs / 1000;
+        _latencyFrames = AirPlayLatency.ToFrames(latencyMs);
+        LatencyDiagnostics = ReceiverLatencyDiagnostics.FromSetup(latencyMs, []);
         // One session id serves as RTSP URI number and streamConnectionID — receivers
         // correlate the RTP flow with the announced stream through it. The RTP SSRC is
         // the same id in NTP mode but ZERO in PTP mode (owntone parity — iOS senders
@@ -224,6 +225,8 @@ public sealed class RaopSession : IAsyncDisposable
             };
         }
         var sessionSetup = await PlistRequestAsync("SETUP", sessionPayload, ct).ConfigureAwait(false);
+        LatencyDiagnostics = ReceiverLatencyDiagnostics.FromSetup(LatencyDiagnostics.RequestedMilliseconds, sessionSetup);
+        LogLatencyDiagnostics();
 
         long eventPort = sessionSetup.TryGetValue("eventPort", out object? ep) && ep is long e ? e : 0;
         Stage($"event channel → port {eventPort}");
@@ -299,12 +302,13 @@ public sealed class RaopSession : IAsyncDisposable
             },
         }, ct).ConfigureAwait(false);
 
+        LatencyDiagnostics = ReceiverLatencyDiagnostics.FromSetup(LatencyDiagnostics.RequestedMilliseconds,
+            sessionSetup, streamSetup);
+        LogLatencyDiagnostics();
         var stream = (streamSetup.GetValueOrDefault("streams") as List<object?>)?.FirstOrDefault()
             as Dictionary<string, object?> ?? throw new RtspException("stream SETUP: no streams in response");
         long dataPort = stream.GetValueOrDefault("dataPort") as long? ?? throw new RtspException("stream SETUP: no dataPort");
         long theirControl = stream.GetValueOrDefault("controlPort") as long? ?? dataPort;
-        Stage($"buffer requested: {_latencyFrames * 1000 / SampleRate} ms; receiver: " +
-            string.Join(", ", stream.Where(p => p.Key.Contains("latenc", StringComparison.OrdinalIgnoreCase)).Select(p => $"{p.Key}={p.Value}")));
         _receiverData = new IPEndPoint(_rtsp.RemoteAddress, (int)dataPort);
         _receiverControl = new IPEndPoint(_rtsp.RemoteAddress, (int)theirControl);
         Stage($"stream ports: data={dataPort} control={theirControl} — session live");
@@ -312,6 +316,9 @@ public sealed class RaopSession : IAsyncDisposable
         // packets alone (owntone parity). Anchoring rtpTime=start at "now" would
         // contradict the sync timeline by the full latency window.
     }
+
+    private void LogLatencyDiagnostics() =>
+        Stage("LATENCY " + System.Text.Json.JsonSerializer.Serialize(LatencyDiagnostics));
 
     private static IPAddress? ExtractTimingPeer(Dictionary<string, object?> sessionSetup)
     {
