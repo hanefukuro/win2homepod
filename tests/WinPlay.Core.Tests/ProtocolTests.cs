@@ -36,6 +36,8 @@ public sealed class ProtocolTests
     [Theory]
     [InlineData("0x200,0x200", 0x20000000200UL)]
     [InlineData("0x80000000,0x80000000", 0x8000000080000000UL)]
+    [InlineData("0x200,0x80000000", 0x8000000000000200UL)]
+    [InlineData("0x80000000,0x1", 0x0000000180000000UL)]
     [InlineData("512", 512UL)]
     [InlineData("0x200", 512UL)]
     [InlineData(null, 0UL)]

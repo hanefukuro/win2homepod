@@ -62,7 +62,8 @@ dotnet test tests/WinPlay.Core.Tests/WinPlay.Core.Tests.csproj -c Release
 ```
 
 テストはplistの往復、feature bitの保持、ALACのフレーム構造を検証します。
-Win2HomePod-win-x64のArtifactにはapp/と起動スクリプト、説明・ライセンスを含みます。
+Win2HomePod-win-x64のArtifactにはapp/と起動スクリプト、説明・ライセンス、receiver-hints.example.jsonを含みます。
+配布物の作成時に、検出用テンプレート、実行ファイル、第三者ライセンス表記などの必須ファイルの存在を検証します。
 .NET 10 Desktop Runtimeが必要です。テスト結果とUI画像も別Artifactとして保存します。
 CIでHomePodの探索・音声送信は実行しません。画面画像の生成だけでは見た目の正しさや出音を保証しません。
 WASAPIの取得、ネットワーク変動、実測総遅延、複数台の同期精度は実機確認の対象です。

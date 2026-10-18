@@ -82,7 +82,12 @@ jobs:
           Copy-Item app dist/app -Recurse
           Copy-Item probe-app dist/probe-app -Recurse
           Copy-Item docs dist/docs -Recurse
-          Copy-Item Start.cmd, Stop.cmd, README.md, VERIFICATION.md, LICENSE dist
+          Copy-Item Start.cmd, Stop.cmd, README.md, VERIFICATION.md, LICENSE, receiver-hints.example.json dist
+          foreach ($file in @('Start.cmd', 'Stop.cmd', 'README.md', 'VERIFICATION.md', 'LICENSE', 'receiver-hints.example.json', 'app/Win2HomePod.exe', 'app/LICENSE', 'app/THIRD_PARTY_NOTICES.md', 'app/UPSTREAM.md')) {
+            if (-not (Test-Path -LiteralPath (Join-Path dist $file) -PathType Leaf)) {
+              throw "Distribution file missing: $file"
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: Win2HomePod-win-x64
