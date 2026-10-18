@@ -1,7 +1,7 @@
 # HomePodの別音声経路調査（Issue #2）
 
 この文書と実験CLIは、受信機が受理するSETUP宣言を比較するためのものです。
-新しい低遅延経路の発見、出音、20〜50 msの総遅延はまだ確認していません。
+新しい低遅延経路の発見、別経路での出音、20〜50 msの総遅延はまだ確認していません。
 既存のGUIアプリの送信経路とALAC encoderは変更しません。
 
 ## ソースから確認できたこと
@@ -84,10 +84,10 @@ TXTファイルは`{"airplay":{"features":"0x200,0x200"},"raop":{"cn":"0,1,2"}}`
 
 | ケース | 変更 | 判定 |
 | --- | --- | --- |
-| 現行基準 | 96 / ALAC / 0x40000 / 352 / 44100 / PTP | 実機未試験 |
-| PCM・NTP | ct=1 / audioFormat=0x800 / NTP（pyatvを比較元にする） | 実機未試験 |
-| PCM・PTP | 上記からtimingだけ変更 | 実機未試験 |
-| 小packet | 基準からspf=176または88だけ変更 | 宣言の受理のみをprobe可能。対応音声送信は未実装 |
+| 現行基準 | 96 / ALAC / 0x40000 / 352 / 44100 / PTP | 実機2台でSETUP 200、arrivalToRenderLatencyMs=69 |
+| PCM・NTP | ct=1 / audioFormat=0x800 / NTP（pyatvを比較元にする） | 実機2台でSETUP 200、arrivalToRenderLatencyMs=70。音声送信は未実装 |
+| PCM・PTP | 上記からtimingだけ変更 | 実機2台でSETUP 200、arrivalToRenderLatencyMs=69。音声送信は未実装 |
+| 小packet | 基準からspf=176または88だけ変更 | 両方とも実機2台でstream SETUP 400。対応音声送信は未実装 |
 | その他のtype/mode/codec | Apple sender等で観測した値 | 観測値未取得 |
 
 probeの200 OKは出音や低遅延の証拠ではありません。次段階では受理された宣言に対応するencoder・
@@ -95,3 +95,5 @@ packetization・syncを実装し、連続再生の再送/損失、安定性、st
 この時点では「別経路が速い」「70 msが固定下限」のどちらも結論にしません。
 CIは設定・plist・redaction・応答分類・ローカルの模擬RTSP受信機とCLIのオフライン動作を検証します。
 実HomePodの認証と全SETUP成功シーケンスはCIで再現していません。
+
+2026-10-18の実機結果と試験範囲は[REAL_DEVICE_TESTS.md](REAL_DEVICE_TESTS.md)を参照してください。
