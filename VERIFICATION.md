@@ -51,3 +51,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 - 退避した変更前のソースを別フォルダーへ復元し、ファイル一致と再ビルドを確認。
 
 上記は限られた機器・短時間での確認です。長時間再生、全機種、音響測定による遅延・同期精度の確認は含みません。
+
+## クラウドCI（Issue #3）
+
+GitHub ActionsのCIはPR、main / codex/**へのpushと手動実行に対応します。
+Linux / Windowsで以下のテストを実行し、Windowsでbuild.ps1と--renderを実行します。
+
+```powershell
+dotnet test tests/WinPlay.Core.Tests/WinPlay.Core.Tests.csproj -c Release
+```
+
+テストはplistの往復、feature bitの保持、ALACのフレーム構造を検証します。
+Win2HomePod-win-x64のArtifactにはapp/と起動スクリプト、説明・ライセンスを含みます。
+.NET 10 Desktop Runtimeが必要です。テスト結果とUI画像も別Artifactとして保存します。
+CIでHomePodの探索・音声送信は実行しません。画面画像の生成だけでは見た目の正しさや出音を保証しません。
+WASAPIの取得、ネットワーク変動、実測総遅延、複数台の同期精度は実機確認の対象です。
