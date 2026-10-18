@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Protocol and settings tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test without audio hardware
+        run: dotnet test tests/WinPlay.Core.Tests/WinPlay.Core.Tests.csproj -c Release --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: TestResults/*.trx
+          if-no-files-found: error
+
+  windows-build:
+    name: Windows build and UI smoke test
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish Windows app
+        shell: pwsh
+        run: ./build.ps1
+      - name: Render UI without discovery or streaming
+        shell: pwsh
+        run: |
+          $process = Start-Process ./app/Win2HomePod.exe -ArgumentList '--render' -PassThru
+          if (-not $process.WaitForExit(30000)) {
+            $process.Kill()
+            throw 'UI render timed out'
+          }
+          if ($process.ExitCode -ne 0) { throw "UI render failed: $($process.ExitCode)" }
+          if (-not (Test-Path .state/ui.png)) { throw 'UI screenshot was not generated' }
+      - name: Stage launch scripts and notices
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item app dist/app -Recurse
+          Copy-Item Start.cmd, Stop.cmd, README.md, VERIFICATION.md, LICENSE, receiver-hints.example.json dist
+          foreach ($file in @('Start.cmd', 'Stop.cmd', 'README.md', 'VERIFICATION.md', 'LICENSE', 'receiver-hints.example.json', 'app/Win2HomePod.exe', 'app/LICENSE', 'app/THIRD_PARTY_NOTICES.md', 'app/UPSTREAM.md')) {
+            if (-not (Test-Path -LiteralPath (Join-Path dist $file) -PathType Leaf)) {
+              throw "Distribution file missing: $file"
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Win2HomePod-win-x64
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-ui-smoke
+          path: |
+            .state/ui.png
+            .state/*.log
+          include-hidden-files: true
+          if-no-files-found: warn
