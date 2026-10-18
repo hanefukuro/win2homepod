@@ -15,5 +15,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <ProjectReference Include="../../vendor/WinPlay/WinPlay.Core/WinPlay.Core.csproj" />
+    <ProjectReference Include="../../src/Win2HomePod.Probe/Win2HomePod.Probe.csproj" />
   </ItemGroup>
 </Project>

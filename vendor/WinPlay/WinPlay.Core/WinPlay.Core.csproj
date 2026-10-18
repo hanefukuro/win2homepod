@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WinPlay.Core.Tests" />
+    <InternalsVisibleTo Include="Win2HomePod.Probe" />
     <!-- WinPlay is Windows-only (WASAPI, DPAPI, WinUI hosts). -->
     <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
       <_Parameter1>windows</_Parameter1>

@@ -6,6 +6,7 @@ __pycache__/
 **/bin/
 **/obj/
 app/
+probe-app/
 
 # Local discovery hints, secrets, editor settings and diagnostic archives.
 receiver-hints.json
